@@ -63,7 +63,7 @@ nix-shell -p kubectl-ai
 
 ### Usage
 
-`kubectl-ai` supports AI models from `gemini`, `vertexai`, `azopenai`, `openai`, `grok` and local LLM providers such as `ollama` and `llama.cpp`.
+`kubectl-ai` supports AI models from `gemini`, `vertexai`, `azopenai`, `openai`, `grok`, `claude` and local LLM providers such as `ollama` and `llama.cpp`.
 
 #### Using Gemini (Default)
 
@@ -113,6 +113,24 @@ You can use X.AI's Grok model by setting your X.AI API key:
 ```bash
 export GROK_API_KEY=your_xai_api_key_here
 kubectl-ai --llm-provider=grok --model=grok-3-beta
+```
+
+#### Using Claude
+
+You can use Anthropic's Claude models by setting your Anthropic API key:
+
+```bash
+export ANTHROPIC_API_KEY=your_anthropic_api_key_here
+kubectl-ai --llm-provider=claude --model=claude-sonnet-4-0
+
+# Use Claude 4 Opus (most capable) model
+kubectl-ai --llm-provider=claude --model=claude-opus-4-0 "debug the failing deployment"
+
+# Use Claude 4 Sonnet (balanced performance and capability) 
+kubectl-ai --llm-provider=claude --model=claude-sonnet-4-0 "analyze the resource usage"
+
+# Use Claude 3.5 Haiku (faster) model for quick queries
+kubectl-ai --quiet --llm-provider=claude --model=claude-3-5-haiku-20241022 "check logs for nginx app in hello namespace"
 ```
 
 #### Using Azure OpenAI
@@ -173,6 +191,140 @@ You can even combine a positional argument with stdin input. The positional argu
 ```shell
 cat error.log | kubectl-ai "explain the error"
 ```
+
+## 🚀 Claude Integration Quick Start Guide
+
+This guide will walk you through testing the new Claude AI integration step by step.
+
+### Prerequisites
+
+1. **kubectl installed and configured** with access to a Kubernetes cluster
+2. **Go 1.24+ installed** (if building from source)
+3. **Anthropic API key** - Get one from [Anthropic Console](https://console.anthropic.com/)
+
+### Step 1: Get Your Anthropic API Key
+
+1. Visit [Anthropic Console](https://console.anthropic.com/)
+2. Sign up or log in to your account
+3. Navigate to API Keys section
+4. Create a new API key
+5. Copy the key (starts with `sk-ant-`)
+
+### Step 2: Set Environment Variables
+
+```bash
+# Set your Anthropic API key
+export ANTHROPIC_API_KEY=sk-ant-your_api_key_here
+
+# Verify it's set
+echo $ANTHROPIC_API_KEY
+```
+
+### Step 3: Build kubectl-ai (if needed)
+
+If you haven't installed kubectl-ai yet or want the latest version with Claude support:
+
+```bash
+# Clone the repository
+git clone https://github.com/GoogleCloudPlatform/kubectl-ai.git
+cd kubectl-ai
+
+# Build the binary
+go build -o kubectl-ai ./cmd
+```
+
+### Step 4: Test Claude Integration
+
+**4.1 Test that Claude is recognized:**
+```bash
+./kubectl-ai --llm-provider=claude --help
+```
+
+**4.2 List available Claude models:**
+```bash
+./kubectl-ai --llm-provider=claude --quiet "list available models"
+```
+
+**4.3 Test with Claude 4 Sonnet (balanced performance):**
+```bash
+./kubectl-ai --llm-provider=claude --model=claude-sonnet-4-0 "show me all pods in the default namespace"
+```
+
+**4.4 Test with Claude 4 Opus (most capable):**
+```bash
+./kubectl-ai --llm-provider=claude --model=claude-opus-4-0 "explain what a deployment is in Kubernetes"
+```
+
+**4.5 Test with Claude 3.5 Haiku (fastest):**
+```bash
+./kubectl-ai --llm-provider=claude --model=claude-3-5-haiku-20241022 --quiet "get cluster info"
+```
+
+### Step 5: Interactive Mode Testing
+
+Start an interactive session with Claude:
+
+```bash
+./kubectl-ai --llm-provider=claude --model=claude-sonnet-4-0
+```
+
+Try these commands in the interactive mode:
+```
+> list all namespaces
+> show me pods in kube-system namespace
+> explain the difference between a service and an ingress
+> exit
+```
+
+### Step 6: Verify Available Models
+
+Create a simple test script to see all Claude models:
+
+```bash
+# Quick model list test
+./kubectl-ai --llm-provider=claude --quiet "what models are available?" | grep -i claude
+```
+
+### Expected Claude Models Available:
+
+- **Claude 4**: `claude-opus-4-0`, `claude-sonnet-4-0`
+- **Claude 3.7**: `claude-3-7-sonnet-20250219`, `claude-3-7-sonnet-latest`
+- **Claude 3.5**: `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`
+- **Claude 3**: `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, `claude-3-haiku-20240307`
+
+### Troubleshooting
+
+**If you get "ANTHROPIC_API_KEY environment variable not set":**
+```bash
+# Make sure your API key is properly exported
+export ANTHROPIC_API_KEY=sk-ant-your_actual_key_here
+```
+
+**If you get "unknown provider: claude":**
+```bash
+# Rebuild kubectl-ai to ensure Claude provider is included
+go build -o kubectl-ai ./cmd
+```
+
+**If you get build errors:**
+```bash
+# Ensure you have Go 1.24+ and run
+go mod tidy
+go build -o kubectl-ai ./cmd
+```
+
+### 🎉 Success!
+
+If all steps work correctly, you now have kubectl-ai with full Claude integration including Claude 4 support! 
+
+The integration supports:
+- ✅ All Claude models (including Claude 4)
+- ✅ Function calling for kubectl operations
+- ✅ Interactive and non-interactive modes
+- ✅ Streaming responses
+- ✅ Tool usage for Kubernetes operations
+
+---
 
 ## Tools
 
