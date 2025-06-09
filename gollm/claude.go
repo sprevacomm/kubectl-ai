@@ -16,10 +16,15 @@ package gollm
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -47,7 +52,7 @@ type ClaudeClient struct {
 var _ Client = &ClaudeClient{}
 
 // NewClaudeClient creates a new client for interacting with Anthropic's Claude models.
-// Supports custom HTTP client and skipVerifySSL via ClientOptions.
+// Supports custom HTTP client, skipVerifySSL, and timeout configuration via ClientOptions.
 func NewClaudeClient(ctx context.Context, opts ClientOptions) (*ClaudeClient, error) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
@@ -66,17 +71,84 @@ func NewClaudeClient(ctx context.Context, opts ClientOptions) (*ClaudeClient, er
 		klog.Infof("Using custom Claude endpoint: %s", customEndpoint)
 	}
 
-	// Use custom HTTP client if SkipVerifySSL is set
-	if opts.SkipVerifySSL {
-		httpClient := createCustomHTTPClient(opts.SkipVerifySSL)
-		options = append(options, option.WithHTTPClient(httpClient))
-	}
+	// Create custom HTTP client with timeout configuration
+	httpClient := createClaudeHTTPClient(opts.SkipVerifySSL)
+	options = append(options, option.WithHTTPClient(httpClient))
 
 	client := anthropic.NewClient(options...)
 
 	return &ClaudeClient{
 		client: client,
 	}, nil
+}
+
+// createClaudeHTTPClient creates an HTTP client with configurable timeout for Claude API calls
+func createClaudeHTTPClient(skipVerifySSL bool) *http.Client {
+	// Default timeout values
+	defaultTimeout := 60 * time.Second // 60 seconds for Claude API calls
+	defaultRequestTimeout := 300 * time.Second // 5 minutes for request timeout
+	
+	// Check for custom timeout via environment variable
+	if timeoutStr := os.Getenv("CLAUDE_API_TIMEOUT"); timeoutStr != "" {
+		if timeout, err := time.ParseDuration(timeoutStr); err == nil {
+			defaultTimeout = timeout
+			klog.Infof("Using custom Claude API timeout: %v", timeout)
+		} else if timeoutSecs, err := strconv.Atoi(timeoutStr); err == nil {
+			defaultTimeout = time.Duration(timeoutSecs) * time.Second
+			klog.Infof("Using custom Claude API timeout: %v seconds", timeoutSecs)
+		} else {
+			klog.Warningf("Invalid CLAUDE_API_TIMEOUT value '%s', using default: %v", timeoutStr, defaultTimeout)
+		}
+	}
+
+	// Check for custom request timeout via environment variable
+	if requestTimeoutStr := os.Getenv("CLAUDE_REQUEST_TIMEOUT"); requestTimeoutStr != "" {
+		if requestTimeout, err := time.ParseDuration(requestTimeoutStr); err == nil {
+			defaultRequestTimeout = requestTimeout
+			klog.Infof("Using custom Claude request timeout: %v", requestTimeout)
+		} else if timeoutSecs, err := strconv.Atoi(requestTimeoutStr); err == nil {
+			defaultRequestTimeout = time.Duration(timeoutSecs) * time.Second
+			klog.Infof("Using custom Claude request timeout: %v seconds", timeoutSecs)
+		} else {
+			klog.Warningf("Invalid CLAUDE_REQUEST_TIMEOUT value '%s', using default: %v", requestTimeoutStr, defaultRequestTimeout)
+		}
+	}
+
+	// Create base transport
+	var transport http.RoundTripper = &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: defaultTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: skipVerifySSL,
+		},
+	}
+
+	// If not skipping SSL verification, use default transport
+	if !skipVerifySSL {
+		transport = &http.Transport{
+			Dial: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: defaultTimeout,
+			ExpectContinueTimeout: 1 * time.Second,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+		}
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   defaultRequestTimeout,
+	}
 }
 
 // Close cleans up any resources used by the client.

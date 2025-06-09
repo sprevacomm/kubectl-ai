@@ -1,5 +1,7 @@
 # kubectl-ai
 
+> **Note:** This is a fork of [kubectl-ai](https://github.com/GoogleCloudPlatform/kubectl-ai) that adds comprehensive Claude AI integration. The original project supports multiple providers, and this fork extends that support with enhanced Claude functionality, timeout configuration, and cost-effective model options.
+
 [![Go Report Card](https://goreportcard.com/badge/github.com/GoogleCloudPlatform/kubectl-ai)](https://goreportcard.com/report/github.com/GoogleCloudPlatform/kubectl-ai)
 ![GitHub License](https://img.shields.io/github/license/GoogleCloudPlatform/kubectl-ai)
 [![GitHub stars](https://img.shields.io/github/stars/GoogleCloudPlatform/kubectl-ai.svg)](https://github.com/GoogleCloudPlatform/kubectl-ai/stargazers)
@@ -46,18 +48,35 @@ kubectl krew install ai
 ```
 Now you can invoke `kubectl-ai` as a kubectl plugin like this: `kubectl ai`.
 
-#### Install on NixOS
-There are multiple ways to install `kubectl-ai` on NixOS. For a permantent installation add the following to your NixOS-Configuration:
+#### Building from Source
 
-```nix
-  environment.systemPackages = with pkgs; [
-    kubectl-ai
-  ];
-```
-For a temporary installation, you can use the following command:
+If you want to build kubectl-ai from source or install your modified version:
 
+```bash
+# Clone this repository
+git clone https://github.com/your-username/kubectl-ai.git
+cd kubectl-ai
+
+# Build the binary
+go build -o kubectl-ai ./cmd
+
+# Install to system path (requires sudo)
+sudo cp kubectl-ai /usr/local/bin/kubectl-ai
+
+# Or install to user bin (no sudo required, but make sure ~/bin is in your PATH)
+mkdir -p ~/bin
+cp kubectl-ai ~/bin/kubectl-ai
+
+# Verify installation
+kubectl-ai version
 ```
-nix-shell -p kubectl-ai
+
+**Note:** After making changes to the code, repeat the build and install steps to use your updated version:
+
+```bash
+# Rebuild and reinstall after changes
+go build -o kubectl-ai ./cmd
+sudo cp kubectl-ai /usr/local/bin/kubectl-ai
 ```
 </details>
 
@@ -192,7 +211,7 @@ You can even combine a positional argument with stdin input. The positional argu
 cat error.log | kubectl-ai "explain the error"
 ```
 
-## 🚀 Claude Integration Quick Start Guide
+## Claude Integration Quick Start Guide
 
 This guide will walk you through testing the new Claude AI integration step by step.
 
@@ -292,6 +311,25 @@ Create a simple test script to see all Claude models:
 - **Claude 3.5**: `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`
 - **Claude 3**: `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, `claude-3-haiku-20240307`
 
+### Step 7: Configure Timeouts (Optional)
+
+If you experience timeout issues with long analysis queries, you can increase the Claude API timeout:
+
+```bash
+# Set Claude API response timeout (default: 60 seconds)
+export CLAUDE_API_TIMEOUT=180s  # 3 minutes
+
+# Set overall request timeout (default: 300 seconds)
+export CLAUDE_REQUEST_TIMEOUT=600s  # 10 minutes
+
+# Test with timeout configuration
+./kubectl-ai --llm-provider=claude --model=claude-3-5-haiku-20241022 "comprehensive cluster analysis"
+```
+
+**Available timeout formats:**
+- Duration strings: `60s`, `5m`, `1h30m`
+- Seconds as integers: `180` (equivalent to 180 seconds)
+
 ### Troubleshooting
 
 **If you get "ANTHROPIC_API_KEY environment variable not set":**
@@ -313,16 +351,188 @@ go mod tidy
 go build -o kubectl-ai ./cmd
 ```
 
-### 🎉 Success!
+**If you get "context deadline exceeded" with Claude:**
+```bash
+# Increase timeout for long analysis queries
+export CLAUDE_API_TIMEOUT=300s      # 5 minutes for API response
+export CLAUDE_REQUEST_TIMEOUT=600s  # 10 minutes total
+
+# Or break down complex queries into smaller parts
+kubectl-ai --llm-provider=claude --model=claude-3-5-haiku-20241022 "show pod distribution by node"
+kubectl-ai --llm-provider=claude --model=claude-3-5-haiku-20241022 "check scheduling policies"
+```
+
+## Claude Prompt Examples & Best Practices
+
+Get the most out of every Claude API call with these proven prompting strategies:
+
+### Effective Query Patterns
+
+#### 1. Comprehensive Analysis in One Call
+Instead of multiple small queries, use structured prompts that gather everything at once:
+
+```bash
+# GOOD: Comprehensive but focused
+kai "Analyze the 'harness' namespace: show pod distribution across nodes, check for any scheduling constraints or affinities, identify resource bottlenecks, and summarize any issues found"
+
+# AVOID: Multiple separate calls
+kai "show pods in harness namespace"
+kai "check node distribution" 
+kai "look for scheduling policies"
+```
+
+#### 2. Troubleshooting with Context
+Provide clear context about what you're investigating:
+
+```bash
+# EXCELLENT: Context + specific request
+kai "We're seeing uneven pod distribution in our cluster. Please analyze the harness namespace and determine if worker1 is being favored for scheduling. Include: pod counts per node, any node selectors or affinities, recent scheduling events, and resource utilization differences."
+
+# GOOD: Specific troubleshooting
+kai "Debug why pods in the 'app=frontend' deployment are failing to start. Check events, resource limits, image pull status, and node capacity."
+```
+
+#### 3. Multi-Step Operations
+Break complex tasks into logical steps within one prompt:
+
+```bash
+# EXCELLENT: Structured workflow
+kai "Help me safely scale down the production workload: 1) Check current pod distribution and resource usage, 2) Identify which pods can be safely removed, 3) Show me the kubectl commands to scale down gradually, 4) Explain what to monitor during the process."
+```
+
+### Specific Analysis Examples
+
+#### Resource Investigation
+```bash
+# Memory and CPU analysis
+kai "Analyze resource consumption across all namespaces. Show top consumers, identify pods near limits, check for any resource pressure on nodes, and recommend optimization opportunities."
+
+# Storage analysis  
+kai "Investigate persistent volume usage: show PV/PVC status, identify unused volumes, check for storage class issues, and highlight any capacity concerns."
+```
+
+#### Security & Configuration
+```bash
+# Security audit
+kai "Perform a security review of the 'production' namespace: check RBAC permissions, identify pods running as root, review network policies, and flag any security misconfigurations."
+
+# Configuration review
+kai "Review deployment configurations in 'backend' namespace for best practices: check resource limits, health checks, update strategies, and security contexts."
+```
+
+#### Performance & Scaling
+```bash
+# Performance analysis
+kai "Analyze application performance metrics: check HPA status, review recent scaling events, identify bottlenecks, and suggest optimization strategies for better resource utilization."
+
+# Capacity planning
+kai "Help with capacity planning: analyze current resource usage trends, identify nodes approaching capacity, calculate headroom for growth, and recommend scaling strategies."
+```
+
+### Efficiency Tips
+
+#### 1. Use Specific Kubernetes Language
+```bash
+# EXCELLENT: Uses K8s terminology
+kai "Check if any DaemonSets are missing replicas, review StatefulSet rolling update status, and verify all Services have healthy endpoints."
+
+# GOOD: Specific resource types
+kai "Analyze all PodDisruptionBudgets and show which deployments might be affected during node maintenance."
+```
+
+#### 2. Request Actionable Output
+```bash
+# EXCELLENT: Asks for specific actions
+kai "Identify all failing pods and provide the exact kubectl commands needed to restart them, including any dependencies that should be restarted first."
+
+# GOOD: Requests explanation with commands
+kai "Show me how to troubleshoot this CrashLoopBackOff issue and provide step-by-step debugging commands."
+```
+
+#### 3. Combine Analysis with Solutions
+```bash
+# EXCELLENT: Problem + solution in one call
+kai "Our ingress is returning 503 errors. Diagnose the issue by checking ingress configuration, backend services, pod readiness, and provide specific fix commands."
+
+# GOOD: Analysis with recommendations
+kai "Review our cluster's resource allocation and suggest specific requests/limits adjustments for better efficiency."
+```
+
+### Advanced Usage Patterns
+
+#### Monitoring & Alerting
+```bash
+# Health check
+kai "Perform a comprehensive cluster health check: verify all system components, check for any failing pods across all namespaces, review recent events for issues, and summarize overall cluster status."
+
+# Event analysis
+kai "Analyze the last 2 hours of cluster events to identify patterns, recurring issues, or anomalies that need attention."
+```
+
+#### Migration & Updates
+```bash
+# Update planning
+kai "Plan a rolling update for 'api-service' deployment: check current status, verify update strategy, identify potential issues, and provide the safest update sequence."
+
+# Migration assistance  
+kai "Help migrate workloads from 'old-namespace' to 'new-namespace': show current resources, generate migration manifests, and provide validation steps."
+```
+
+### Avoiding Timeouts
+
+#### Break Down Complex Queries
+Instead of one massive analysis, use focused queries:
+
+```bash
+# If this times out:
+kai "Complete infrastructure audit of entire cluster..."
+
+# Try this instead:
+kai "Audit compute resources: analyze node utilization, pod distribution, and resource constraints"
+kai "Audit networking: review services, ingresses, network policies, and connectivity issues"  
+kai "Audit storage: check PV/PVC status, storage classes, and capacity planning"
+```
+
+#### Use Incremental Analysis
+```bash
+# Start broad, then drill down:
+kai "Overview of cluster health and identify top 3 areas needing attention"
+# Then follow up with specific areas identified
+```
+
+### Pro Tips for Maximum Effectiveness
+
+1. Be Specific About Output Format
+   ```bash
+   kai "Show pod resource usage in table format with node assignments"
+   kai "Generate YAML manifests for the recommended changes"
+   ```
+
+2. Include Context About Your Environment
+   ```bash
+   kai "In our production EKS cluster, analyze why the payment service pods are experiencing high latency"
+   ```
+
+3. Ask for Explanations
+   ```bash
+   kai "Explain why these pods are in Pending state and show me how to fix each root cause"
+   ```
+
+4. Request Validation Steps
+   ```bash
+   kai "Help me scale this deployment and provide validation commands to confirm the scaling worked correctly"
+   ```
+
+### Success!
 
 If all steps work correctly, you now have kubectl-ai with full Claude integration including Claude 4 support! 
 
 The integration supports:
-- ✅ All Claude models (including Claude 4)
-- ✅ Function calling for kubectl operations
-- ✅ Interactive and non-interactive modes
-- ✅ Streaming responses
-- ✅ Tool usage for Kubernetes operations
+- All Claude models (including Claude 4)
+- Function calling for kubectl operations
+- Interactive and non-interactive modes
+- Streaming responses
+- Tool usage for Kubernetes operations
 
 ---
 
